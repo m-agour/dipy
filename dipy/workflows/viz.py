@@ -7,9 +7,29 @@ from dipy.io.image import load_nifti
 from dipy.io.peaks import load_pam
 from dipy.io.streamline import load_tractogram
 from dipy.io.surface import load_gifti, load_pial
-from dipy.io.utils import create_nifti_header, split_filename_extension
+from dipy.io.utils import create_nifti_header
+
+try:
+    from dipy.io.utils import split_filename_extension
+except ImportError:
+    import os
+
+    def split_filename_extension(filename):
+        """Fallback for dipy < 1.12."""
+        name = str(filename)
+        if name.lower().endswith(".nii.gz"):
+            return name[:-7], ".nii.gz"
+        if name.lower().endswith(".gii.gz"):
+            return name[:-7], ".gii.gz"
+        base, ext = os.path.splitext(name)
+        return base, ext
 from dipy.stats.analysis import assignment_map
-from dipy.utils.logging import logger
+try:
+    from dipy.utils.logging import logger
+except ImportError:
+    import logging
+
+    logger = logging.getLogger("dipy")
 from dipy.utils.optpkg import optional_package
 from dipy.viz import horizon, skyline
 from dipy.workflows.workflow import Workflow
@@ -20,9 +40,14 @@ fury, has_fury, setup_module = optional_package(
 
 
 if has_fury:
-    from fury.colormap import line_colors
-    from fury.lib import numpy_support
-    from fury.utils import numpy_to_vtk_colors
+    try:
+        from fury.colormap import line_colors
+        from fury.lib import numpy_support
+        from fury.utils import numpy_to_vtk_colors
+    except ImportError:
+        line_colors = None
+        numpy_support = None
+        numpy_to_vtk_colors = None
 
 
 class HorizonFlow(Workflow):
@@ -139,20 +164,6 @@ class HorizonFlow(Workflow):
         interactive = not stealth
         world_coords = not native_coords
         bundle_colors = None
-
-        # mni_2009a = {
-        #    "affine": np.array(
-        #        [
-        #            [1.0, 0.0, 0.0, -98.0],
-        #            [0.0, 1.0, 0.0, -134.0],
-        #            [0.0, 0.0, 1.0, -72.0],
-        #            [0.0, 0.0, 0.0, 1.0],
-        #        ]
-        #    ),
-        #    "dims": (197, 233, 189),
-        #    "vox_size": (1.0, 1.0, 1.0),
-        #    "vox_space": "RAS",
-        # }
 
         mni_2009c = {
             "affine": np.array(
@@ -293,6 +304,14 @@ class HorizonFlow(Workflow):
 
 
 class SkylineFlow(Workflow):
+    """GPU-accelerated Skyline viewer (pygfx / imgui).
+
+    Parallel to ``HorizonFlow`` but uses the pygfx rendering backend with
+    an ImGui GUI.  Accepts ``.nii`` / ``.nii.gz`` images, ``.pam5``
+    files, surfaces, ROIs, and tractograms and launches the
+    :func:`~dipy.viz.skyline.app.skyline` interactive viewer.
+    """
+
     @classmethod
     def get_short_name(cls):
         return "skyline"
@@ -404,7 +423,7 @@ class SkylineFlow(Workflow):
                     f"File extension '{ext}' is not supported for ROIs in Skyline."
                 )
 
-        skyline(
+        skyline.skyline(
             images=skyline_images,
             peaks=skyline_peaks,
             rois=skyline_rois,
