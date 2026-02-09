@@ -2,7 +2,12 @@
 from pathlib import Path
 import sys
 
-from dipy.utils.logging import logger
+try:
+    from dipy.utils.logging import logger
+except ImportError:
+    import logging
+
+    logger = logging.getLogger("dipy")
 from dipy.utils.optpkg import optional_package
 from dipy.workflows.flow_runner import run_flow
 
