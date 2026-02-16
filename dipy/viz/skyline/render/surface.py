@@ -39,7 +39,7 @@ class Surface(Visualization):
         return self._surface_actor
 
     def render_widgets(self):
-        changed, new = thin_slider(
+        changed, _pointer_released, new = thin_slider(
             "Opacity",
             self.opacity,
             0,

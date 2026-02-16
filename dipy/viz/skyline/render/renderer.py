@@ -119,7 +119,7 @@ def create_window(
             screen_config=screen_config,
             imgui=True,
             imgui_draw_function=lambda: None,
-            pixel_ratio=1.5,
+            pixel_ratio=3,
         )
     else:
         show_m = window.ShowManager(

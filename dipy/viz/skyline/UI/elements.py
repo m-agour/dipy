@@ -219,7 +219,9 @@ def render_group(label, items, *, row_height=26, label_width=36, line_indent=8):
     Returns
     -------
     list of tuple
-        A list of ``(changed, new_value)`` returned from each ``render_fn`` call.
+        A list of ``(changed, pointer_released, new_value)`` returned from each
+        ``render_fn`` call. If a renderer returns only ``(changed, new_value)``,
+        ``pointer_released`` is set to ``False``.
         Returns ``None`` if no items are supplied.
     """
     if not items:
@@ -278,8 +280,18 @@ def render_group(label, items, *, row_height=26, label_width=36, line_indent=8):
             imgui.dummy((1, text_height))
 
             imgui.table_set_column_index(1)
-            changed, new = render_fn(*args, **kwargs)
-            render_data.append((changed, new))
+            result = render_fn(*args, **kwargs)
+            if len(result) == 2:
+                changed, new = result
+                pointer_released = False
+            elif len(result) == 3:
+                changed, pointer_released, new = result
+            else:
+                raise ValueError(
+                    "render_fn must return (changed, value) or "
+                    "(changed, pointer_released, value)"
+                )
+            render_data.append((changed, pointer_released, new))
 
         imgui.end_table()
         return render_data
@@ -526,6 +538,7 @@ def thin_slider(
     text_format=".3f",
     value_type="float",
     value_unit=None,
+    on_pointer_release=None,
 ):
     """Render a compact slider with a thin track and circular thumb.
 
@@ -555,11 +568,14 @@ def thin_slider(
         Numeric type enforced for the slider value.
     value_unit : str or None, optional
         Optional unit suffix appended to the value display.
+    on_pointer_release : callable or None, optional
+        Callback invoked with the current typed value when pointer dragging ends.
 
     Returns
     -------
-    tuple(bool, float or int)
-        Whether the slider value changed and the resulting numeric value.
+    tuple(bool, bool, float or int)
+        Whether the slider value changed, whether pointer dragging just ended,
+        and the resulting numeric value.
     """
     if value_type not in {"float", "int"}:
         raise ValueError("value_type must be either 'float' or 'int'")
@@ -686,8 +702,21 @@ def thin_slider(
         imgui.pop_item_width()
     imgui.pop_id()
 
+    state = imgui.get_state_storage()
+    active_key = imgui.get_id(f"{label}_thin_slider_active")
+    was_active = state.get_int(active_key, 0) == 1
+    pointer_released = (
+        was_active
+        and not active
+        and not imgui.is_mouse_down(imgui.MouseButton_.left)
+    )
+    state.set_int(active_key, 1 if active else 0)
+
+    if pointer_released and on_pointer_release is not None:
+        on_pointer_release(typed_value)
+
     value_changed = typed_value != typed_original
-    return value_changed, typed_value
+    return value_changed, pointer_released, typed_value
 
 
 def two_disk_slider(

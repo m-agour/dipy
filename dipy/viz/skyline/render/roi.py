@@ -32,7 +32,7 @@ class ROI3D(Visualization):
         return self._roi_surface
 
     def render_widgets(self):
-        changed, new = thin_slider(
+        changed, _pointer_released, new = thin_slider(
             "Opacity",
             self.opacity,
             0,

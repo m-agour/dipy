@@ -112,7 +112,7 @@ class Image3D(Visualization):
         return self._slicer
 
     def render_widgets(self):
-        changed, new = thin_slider(
+        changed, _pointer_released, new = thin_slider(
             "Opacity",
             self.opacity,
             0,
@@ -149,7 +149,7 @@ class Image3D(Visualization):
                 )
             )
         render_data = render_group("Slice", slicers)
-        for idx, (changed, new) in enumerate(render_data):
+        for idx, (changed, _pointer_released, new) in enumerate(render_data):
             if changed:
                 self.state[idx] = new
             show_slices(self._slicer, self.state)
@@ -176,7 +176,7 @@ class Image3D(Visualization):
 
         if self._has_directions:
             imgui.spacing()
-            volume_changed, new_idx = thin_slider(
+            volume_changed, _pointer_released, new_idx = thin_slider(
                 "Directions",
                 self._volume_idx,
                 0,

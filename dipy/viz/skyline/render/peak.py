@@ -37,7 +37,7 @@ class Peak3D(Visualization):
         return self._slicer
 
     def render_widgets(self):
-        changed, new = thin_slider(
+        changed, _pointer_released, new = thin_slider(
             "Opacity",
             self.opacity,
             0,
@@ -73,7 +73,7 @@ class Peak3D(Visualization):
                 )
             )
         render_data = render_group("Slice", slicers)
-        for idx, (changed, new) in enumerate(render_data):
+        for idx, (changed, _pointer_released, new) in enumerate(render_data):
             if changed:
                 self.state[idx] = new
                 self._slicer.cross_section = self.state
