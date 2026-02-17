@@ -820,6 +820,7 @@ fn sample_hermite_cube_bilinear(glyph_id: u32, direction: vec3<f32>) -> f32 {
     let v_norm = (tc / ma + 1.0) * 0.5;
 
     let lut_res = LUT_PHI_RES;
+
     let s = 1.0 + u_norm * (f32(lut_res) - 3.0);
     let t = 1.0 + v_norm * (f32(lut_res) - 3.0);
 
@@ -829,7 +830,8 @@ fn sample_hermite_cube_bilinear(glyph_id: u32, direction: vec3<f32>) -> f32 {
     let alpha = fract(s);
     let beta = fract(t);
 
-    let face_offset = face_idx * lut_res * lut_res;
+    let face_stride = lut_res * lut_res;
+    let face_offset = face_idx * face_stride;
 
     let r00 = read_hermite_value(glyph_id, face_offset + u32(j0) * lut_res + u32(i0)).x;
     let r10 = read_hermite_value(glyph_id, face_offset + u32(j0) * lut_res + u32(i0 + 1)).x;
@@ -1730,6 +1732,12 @@ const NEWTON_STEPS: i32 = 12;
 const RAY_BRACKET_STEPS_MAX: i32 = 192;
 const RAY_BRACKET_STEPS_MIN: i32 = 64;
 
+// Hermite LUT surface is smooth & cheap to evaluate → fewer steps.
+const HERMITE_BRACKET_STEPS_MAX: i32 = 48;
+const HERMITE_BRACKET_STEPS_MIN: i32 = 24;
+const HERMITE_BISECTION_STEPS: i32 = 10;
+const HERMITE_NEWTON_STEPS: i32 = 5;
+
 const LOD_HIGH_THRESHOLD: f32 = 64.0;
 const LOD_LOW_THRESHOLD: f32 = 16.0;
 
@@ -1754,11 +1762,21 @@ fn surface_difference(
     let offset = position - center;
     let dist = length(offset);
     if (dist < 1e-5) {
-        let raw_radius = get_radius_optimized(glyph_id, coeff_offset, normalize(ray_dir), coeff_limit);
+        var raw_radius = 0.0;
+        if (USE_HERMITE_INTERP && MAPPING_MODE == 5) {
+            raw_radius = sample_hermite_cube(glyph_id, normalize(ray_dir));
+        } else {
+            raw_radius = get_radius_optimized(glyph_id, coeff_offset, normalize(ray_dir), coeff_limit);
+        }
         return -clamp_radius(raw_radius);
     }
     let direction = offset / dist;
-    let raw_radius = get_radius_optimized(glyph_id, coeff_offset, direction, coeff_limit);
+    var raw_radius = 0.0;
+    if (USE_HERMITE_INTERP && MAPPING_MODE == 5) {
+        raw_radius = sample_hermite_cube(glyph_id, direction);
+    } else {
+        raw_radius = get_radius_optimized(glyph_id, coeff_offset, direction, coeff_limit);
+    }
     let radius = clamp_radius(raw_radius);
     return dist - radius;
 }
@@ -1836,12 +1854,22 @@ fn evaluate_implicit(
     let dist = length(offset);
     if (dist < 1e-5) {
         let fallback_dir = normalize(vec3<f32>(0.577, 0.577, 0.577));
-        let raw_radius = get_radius_optimized(glyph_id, coeff_offset, fallback_dir, coeff_limit);
+        var raw_radius = 0.0;
+        if (USE_HERMITE_INTERP && MAPPING_MODE == 5) {
+            raw_radius = sample_hermite_cube(glyph_id, fallback_dir);
+        } else {
+            raw_radius = get_radius_optimized(glyph_id, coeff_offset, fallback_dir, coeff_limit);
+        }
         let radius = clamp_radius(raw_radius);
         return dist - radius;
     }
     let direction = offset / dist;
-    let raw_radius = get_radius_optimized(glyph_id, coeff_offset, direction, coeff_limit);
+    var raw_radius = 0.0;
+    if (USE_HERMITE_INTERP && MAPPING_MODE == 5) {
+        raw_radius = sample_hermite_cube(glyph_id, direction);
+    } else {
+        raw_radius = get_radius_optimized(glyph_id, coeff_offset, direction, coeff_limit);
+    }
     let radius = clamp_radius(raw_radius);
     return dist - radius;
 }
@@ -1958,6 +1986,12 @@ fn find_surface_intersection(
     }
 
     if (USE_HERMITE_INTERP && MAPPING_MODE == 5) {
+        let h_bracket_steps = i32(mix(
+            f32(HERMITE_BRACKET_STEPS_MIN),
+            f32(HERMITE_BRACKET_STEPS_MAX),
+            lod_factor
+        ));
+
         var prev_t = start;
         var prev_val = surface_difference_fast(coeff_offset, center, ray_origin, ray_dir, start, coeff_limit, glyph_id);
 
@@ -1965,8 +1999,8 @@ fn find_surface_intersection(
         var bracket_high = end;
         var found = false;
 
-        for (var step: i32 = 1; step <= ray_bracket_steps; step = step + 1) {
-            let t = start + (end - start) * f32(step) / f32(ray_bracket_steps);
+        for (var step: i32 = 1; step <= h_bracket_steps; step = step + 1) {
+            let t = start + (end - start) * f32(step) / f32(h_bracket_steps);
             let val = surface_difference_fast(coeff_offset, center, ray_origin, ray_dir, t, coeff_limit, glyph_id);
 
             if (prev_val > 0.0 && val <= 0.0) {
@@ -1984,7 +2018,7 @@ fn find_surface_intersection(
             return result;
         }
 
-        for (var i: i32 = 0; i < BISECTION_STEPS; i = i + 1) {
+        for (var i: i32 = 0; i < HERMITE_BISECTION_STEPS; i = i + 1) {
             let mid = 0.5 * (bracket_low + bracket_high);
             let val = surface_difference_fast(coeff_offset, center, ray_origin, ray_dir, mid, coeff_limit, glyph_id);
             if (val <= 0.0) {
@@ -1995,7 +2029,7 @@ fn find_surface_intersection(
         }
 
         var t = 0.5 * (bracket_low + bracket_high);
-        for (var i: i32 = 0; i < NEWTON_STEPS; i = i + 1) {
+        for (var i: i32 = 0; i < HERMITE_NEWTON_STEPS; i = i + 1) {
             let eval = evaluate_surface_analytic(coeff_offset, center, ray_origin, ray_dir, t, coeff_limit, glyph_id);
             let diff = eval.F;
             let derivative = eval.F_prime;
@@ -2163,6 +2197,11 @@ fn fs_main(varyings: Varyings, @builtin(front_facing) is_front: bool) -> Fragmen
     let coord = uv * 2.0 - vec2<f32>(1.0);
     let radius_sq = dot(coord, coord);
     if (radius_sq > 1.0) {
+        discard;
+    }
+
+    // Early-out when fully transparent — skip ray marching & prevent depth write
+    if (u_material.opacity < 0.004) {
         discard;
     }
 
@@ -2342,6 +2381,38 @@ fn fs_main(varyings: Varyings, @builtin(front_facing) is_front: bool) -> Fragmen
             let diff = length(normal_analytic - normal_fd);
             let err = clamp(diff * 10.0, 0.0, 1.0);
             glyph_color = vec3<f32>(err, 1.0 - err, 0.0);
+        } else if (DEBUG_MODE == 11) {
+            // Hermite-active diagnostic:
+            // GREEN = Hermite LUT path active, RED = direct SH eval path
+            if (USE_HERMITE_INTERP && MAPPING_MODE == 5) {
+                glyph_color = vec3<f32>(0.0, 1.0, 0.0);
+            } else {
+                glyph_color = vec3<f32>(1.0, 0.0, 0.0);
+            }
+        } else if (DEBUG_MODE == 12) {
+            // Show cube face index as color (0-5 → distinct colors)
+            let abs_d = abs(direction);
+            var face_col = vec3<f32>(0.5);
+            if (abs_d.x >= abs_d.y && abs_d.x >= abs_d.z) {
+                if (direction.x > 0.0) { face_col = vec3<f32>(1.0, 0.0, 0.0); }
+                else { face_col = vec3<f32>(0.0, 1.0, 1.0); }
+            } else if (abs_d.y >= abs_d.z) {
+                if (direction.y > 0.0) { face_col = vec3<f32>(0.0, 1.0, 0.0); }
+                else { face_col = vec3<f32>(1.0, 0.0, 1.0); }
+            } else {
+                if (direction.z > 0.0) { face_col = vec3<f32>(0.0, 0.0, 1.0); }
+                else { face_col = vec3<f32>(1.0, 1.0, 0.0); }
+            }
+            glyph_color = face_col;
+        } else if (DEBUG_MODE == 13) {
+            // Show Hermite LUT raw value as grayscale
+            if (USE_HERMITE_INTERP && MAPPING_MODE == 5) {
+                let hval = sample_hermite_cube(glyph_id, direction);
+                let norm_val = clamp(hval * 0.5 + 0.5, 0.0, 1.0);
+                glyph_color = vec3<f32>(norm_val, norm_val, norm_val);
+            } else {
+                glyph_color = vec3<f32>(1.0, 0.0, 0.0);
+            }
         }
     }
 
