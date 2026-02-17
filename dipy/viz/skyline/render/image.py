@@ -1,6 +1,6 @@
 from fury.actor import set_group_opacity, show_slices, volume_slicer
 from fury.lib import gfx
-from imgui_bundle import imgui
+from imgui_bundle import icons_fontawesome_6, imgui
 import numpy as np
 
 from dipy.viz.skyline.UI.elements import (
@@ -10,6 +10,7 @@ from dipy.viz.skyline.UI.elements import (
     thin_slider,
     two_disk_slider,
 )
+from dipy.viz.skyline.UI.theme import THEME, WINDOW_THEME
 from dipy.viz.skyline.render.renderer import Visualization
 
 
@@ -52,6 +53,8 @@ class Image3D(Visualization):
 
         self._create_slicer_actor()
         self.opacity = opacity
+
+        self._axis_visible = [True, True, True]
 
         self._slicer.add_event_handler(self._pick_voxel, "pointer_down")
 
@@ -111,6 +114,54 @@ class Image3D(Visualization):
     def actor(self):
         return self._slicer
 
+    def renderer(self, name, is_open):
+        """Override to enforce hierarchical visibility.
+
+        When the master header eye is toggled off, all axes are hidden
+        regardless of per-axis toggles.  When toggled back on, the
+        per-axis state is restored.
+        """
+        result = super().renderer(name, is_open)
+        self._apply_axis_visibility()
+        return result
+
+    def _apply_axis_visibility(self):
+        """Set each slice child's visibility based on master + per-axis."""
+        master_on = self._slicer.visible
+        for i, child in enumerate(self._slicer.children):
+            child.visible = master_on and self._axis_visible[i]
+
+    @staticmethod
+    def _eye_toggle(label, is_on):
+        """Draw a small eye-icon toggle."""
+        imgui.push_id(label)
+        icon = (
+            icons_fontawesome_6.ICON_FA_EYE
+            if is_on
+            else icons_fontawesome_6.ICON_FA_EYE_SLASH
+        )
+        text_color = THEME["text_highlight"] if is_on else THEME["text"]
+        icon_size = imgui.calc_text_size(icon)
+        btn_h = icon_size.y + 4
+        btn_w = icon_size.x + 4
+
+        start = imgui.get_cursor_screen_pos()
+        draw_list = imgui.get_window_draw_list()
+
+        imgui.invisible_button(f"eye_{label}", (btn_w, btn_h))
+        clicked = imgui.is_item_clicked()
+        hovered = imgui.is_item_hovered()
+
+        col = imgui.get_color_u32(text_color)
+        if hovered:
+            col = imgui.get_color_u32(WINDOW_THEME["title_active_color"])
+        icon_pos = (start.x + 2, start.y + (btn_h - icon_size.y) * 0.5)
+        draw_list.add_text(icon_pos, col, icon)
+
+        new_state = (not is_on) if clicked else is_on
+        imgui.pop_id()
+        return clicked, new_state
+
     def render_widgets(self):
         changed, _pointer_released, new = thin_slider(
             "Opacity",
@@ -134,25 +185,36 @@ class Image3D(Visualization):
             (int(self.bounds[0][1] + 1), int(self.bounds[1][1] - 1)),
             (int(self.bounds[0][2] + 1), int(self.bounds[1][2] - 1)),
         )
-        slicers = []
-        for axis, label in enumerate(axis_labels):
+
+        label_color = THEME["text"]
+        imgui.text_colored(label_color, "Slice")
+        imgui.spacing()
+
+        for axis in range(3):
+            label = axis_labels[axis]
             min_bound, max_bound = slider_bounds[axis]
-            slicers.append(
-                (
-                    thin_slider,
-                    (label, self.state[axis], min_bound, max_bound),
-                    {
-                        "value_type": "float",
-                        "text_format": ".0f",
-                        "step": 1,
-                    },
-                )
+
+            eye_clicked, self._axis_visible[axis] = self._eye_toggle(
+                f"slice_{label}", self._axis_visible[axis]
             )
-        render_data = render_group("Slice", slicers)
-        for idx, (changed, _pointer_released, new) in enumerate(render_data):
+            if eye_clicked:
+                self._apply_axis_visibility()
+
+            imgui.same_line(0, 6)
+
+            changed, _pointer_released, new_val = thin_slider(
+                label,
+                self.state[axis],
+                min_bound,
+                max_bound,
+                value_type="float",
+                text_format=".0f",
+                step=1,
+            )
             if changed:
-                self.state[idx] = new
+                self.state[axis] = new_val
             show_slices(self._slicer, self.state)
+            self._apply_axis_visibility()
 
         imgui.spacing()
         volume_for_range = (

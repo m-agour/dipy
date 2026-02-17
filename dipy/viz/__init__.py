@@ -11,7 +11,7 @@ fury_pckg_msg = (
 )
 
 fury, has_fury, _ = optional_package(
-    "fury", trip_msg=fury_pckg_msg, min_version="0.10.0", max_version="1.0.0"
+    "fury", trip_msg=fury_pckg_msg, min_version="0.10.0"
 )
 
 

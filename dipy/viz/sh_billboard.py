@@ -357,6 +357,7 @@ class BillboardSphGlyphShader(MeshShader):
         self["n_coeffs"] = getattr(wobject, "coeffs_per_glyph", 0)
         self["l_max"] = original_lmax
         self["color_type"] = getattr(wobject, "color_type", 0)
+
         self["use_precomputation"] = int(
             getattr(wobject, "_is_precomputed", False)
         )
@@ -437,10 +438,13 @@ class BillboardSphGlyphShader(MeshShader):
             mat = getattr(wobject, "material", None)
             lut_ready = bool(getattr(wobject, "_sh_lut_ready", False))
             auto_detach = bool(getattr(mat, "auto_detach", True))
+            use_hermite = bool(getattr(wobject, "_sh_use_hermite_interp", False))
+
             if (
                 isinstance(mat, _SphGlyphLutMaterial)
                 and auto_detach
                 and lut_ready
+                and not use_hermite
             ):
                 baked_mat = SphGlyphMaterial(
                     n_coeffs=int(getattr(mat, "n_coeffs", -1)),
@@ -775,6 +779,8 @@ def _populate_hermite_lut_cube_cpu_chunked(
         z /= norm
         vertices = np.column_stack((x, y, z))
         basis = create_sh_basis_matrix(vertices, actor._l_max)
+        if basis.shape[1] > n_coeffs:
+            basis = basis[:, :n_coeffs]
         basis_matrices.append(basis)
 
     glyph_offset = 0
@@ -1306,7 +1312,7 @@ def sph_glyph_billboard(
         max_radius,
         np.full_like(max_radius, 1e-6),
     )
-    padding = 5.5
+    padding = 1.8
     sizes = (max_radius * scale * 2.0 * padding).astype(np.float32)
     sizes = np.column_stack([sizes, sizes])
 

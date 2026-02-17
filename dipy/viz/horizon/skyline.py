@@ -230,7 +230,7 @@ class Skyline:
                 mask=self._mask,
                 basis_type=self._basis_type,
             )
-            self._sh_group = self._sh_slicer_obj.build(axes="xyz")
+            self._sh_group = self._sh_slicer_obj.build(axes="z")
             dt = time.time() - t0
             print(
                 f"  SH built in {dt:.1f}s  "
