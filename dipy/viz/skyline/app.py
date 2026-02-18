@@ -276,6 +276,7 @@ def skyline(
         List of (sft, name) tuples for tractograms.
     sh_coeffs : list, optional
         List of (coeffs_4d, affine, name) tuples for SH glyph slicers.
+        List of path for each tractogram to be added to the Skyline viewer.
     is_cluster : bool, optional
         Whether to cluster the tractograms.
     """
