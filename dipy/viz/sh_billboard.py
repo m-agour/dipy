@@ -1068,18 +1068,6 @@ def _attach_precomputed_radius_tables(actor, precompute_data):
     actor._sh_lut_ready = False
     actor._sh_lut_needs_dispatch = True
 
-    success = False
-    try:
-        _populate_radius_lut_cpu(
-            actor, phi_res, theta_res, glyph_count, n_coeffs
-        )
-        success = True
-    except Exception:
-        pass
-
-    actor._sh_lut_ready = success
-    actor._sh_lut_needs_dispatch = False
-
     old_mat = actor.material
     actor.material = _SphGlyphLutMaterial(
         n_coeffs=int(getattr(old_mat, "n_coeffs", -1)),
@@ -1429,4 +1417,7 @@ def _register_sph_glyph_render(wobject):
 
 @register_wgpu_render_function(SphGlyphBillboard, _SphGlyphLutMaterial)
 def _register_sph_glyph_lut_render(wobject):
-    return (BillboardSphGlyphShader(wobject),)
+    return (
+        BillboardSphGlyphLutComputeShader(wobject),
+        BillboardSphGlyphShader(wobject),
+    )
