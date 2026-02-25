@@ -23,6 +23,7 @@ class Skyline:
         rois=None,
         surfaces=None,
         tractograms=None,
+        sh_coeffs=None,
         is_cluster=False,
         is_light_version=False,
         glass_brain=False,
@@ -47,6 +48,7 @@ class Skyline:
         self._roi_visualizations = []
         self._surface_visualizations = []
         self._tractogram_visualizations = []
+        self._sh_glyph_visualizations = []
         gpu_texture = load_image_as_wgpu_texture_view(str(LOGO), self.window.device)
         logo_tex_ref = self.window._imgui.backend.register_texture(gpu_texture)
         self.window.renderer.add_event_handler(self.handle_key_events, "key_down")
@@ -139,6 +141,16 @@ class Skyline:
                     )
                     self._tractogram_visualizations.append(streamline3d)
                     self.UI_window.add(fname, streamline3d.renderer)
+        if sh_coeffs is not None:
+            from dipy.viz.sh_billboard import create_sph_harmonics_billboard
+            for idx, (coeffs, affine, path) in enumerate(sh_coeffs):
+                fname = Path(path).name if path is not None else f"SH Glyphs {idx}"
+                sh_actor = create_sph_harmonics_billboard(
+                    coeffs,
+                    centers=None,
+                    affine=affine,
+                )
+                self.window.screens[0].scene.main_scene.add(sh_actor)
         self.active_image = None
         if self._image_visualizations:
             self._image_visualizations[-1].active = True
@@ -210,6 +222,7 @@ class Skyline:
             + self._roi_visualizations
             + self._surface_visualizations
             + self._tractogram_visualizations
+            + self._sh_glyph_visualizations
         )
 
 
@@ -221,6 +234,7 @@ def skyline(
     rois=None,
     surfaces=None,
     tractograms=None,
+    sh_coeffs=None,
     is_cluster=False,
     is_light_version=False,
     glass_brain=False,
@@ -267,6 +281,7 @@ def skyline(
         rois=rois,
         surfaces=surfaces,
         tractograms=tractograms,
+        sh_coeffs=sh_coeffs,
         is_cluster=is_cluster,
         is_light_version=is_light_version,
         glass_brain=glass_brain,
